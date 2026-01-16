@@ -6,7 +6,7 @@
 
 export const TTS_CONFIG = {
   // 琪亚娜·卡斯兰娜
-  kiana: import.meta.env.VITE_TTS_KIANA || "7f92f8afb8b54e03879433d71c9377a0", 
+  kiana: import.meta.env.VITE_TTS_KIANA || "a1ae30991487475ababd708ea7a000df", 
 
   // 爱莉希雅
   elysia: import.meta.env.VITE_TTS_ELYSIA || "d65a7b45827040b19b9d1370a7d27f3c",

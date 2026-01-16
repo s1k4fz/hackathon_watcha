@@ -14,11 +14,11 @@ export const HealthBar: React.FC<HealthBarProps> = ({ current, max, label, isPla
   
   return (
     <div className={clsx("w-full max-w-md", isPlayer ? "items-end" : "items-start")}>
-      <div className="flex justify-between mb-1 text-sm font-bold tracking-wider text-white uppercase text-shadow">
-        <span>{label}</span>
-        <span>{current} / {max}</span>
+      <div className="flex justify-between items-end mb-1">
+        <span className="font-bold text-sm tracking-widest uppercase text-white/90 drop-shadow-md">{label}</span>
+        <span className="font-mono text-xs font-bold text-white/90 drop-shadow-md">{current} <span className="text-white/50">/</span> {max}</span>
       </div>
-      <div className="h-4 bg-gray-800 rounded-full border border-gray-600 overflow-hidden relative shadow-inner">
+      <div className="h-4 bg-gray-900/80 rounded-full border border-white/20 overflow-hidden relative shadow-[inset_0_2px_4px_rgba(0,0,0,0.5)]">
         {/* Background track pattern */}
         <div className="absolute inset-0 opacity-20 bg-[repeating-linear-gradient(45deg,transparent,transparent_5px,#000_5px,#000_10px)]" />
         

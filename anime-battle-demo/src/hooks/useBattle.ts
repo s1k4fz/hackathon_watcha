@@ -1,30 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { BattleState, Character, Skill, AIActionResponse, BattleLog } from '../types/game';
-import { initialPlayer, initialEnemy } from '../data/characters';
+import { initialPlayer, initialEnemy, availableCharacters } from '../data/characters';
 import { analyzeCommandStream } from '../services/ai';
 import { queueCharacterSpeech, resetTTSQueue } from '../services/tts';
 
 const createLogId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
+  // Initialize Party with independent objects to avoid reference issues
+  const initialParty = availableCharacters.map(c => ({ ...c })); 
+  // Ensure the selected initial char is synchronized with the party version
+  const startChar = initialParty.find(c => c.id === initialPlayerChar.id) || initialParty[0];
+
   const [battleState, setBattleState] = useState<BattleState>({
     turn: 1,
     phase: 'start',
-    player: { ...initialPlayerChar },
+    player: startChar,
+    party: initialParty, // Persist full party state
     enemy: { ...initialEnemy },
     logs: [{ id: createLogId(), turn: 0, message: '战斗开始！遭遇暗影骑士！', speaker: 'system' }],
     isProcessing: false
   });
 
-  // Ref to hold the current speech sentence buffer
   const speechBuffer = useRef<string>("");
   const speechSequence = useRef<number>(0); 
 
-  const addLog = (message: string, speaker: 'system' | 'player' | 'enemy' = 'system') => {
+  const addLog = (message: string, speaker: 'system' | 'player' | 'enemy' = 'system', isCrit = false) => {
     const id = createLogId();
     setBattleState(prev => ({
       ...prev,
-      logs: [...prev.logs, { id, turn: prev.turn, message, speaker }]
+      logs: [...prev.logs, { id, turn: prev.turn, message, speaker, isCrit }]
     }));
     return id;
   };
@@ -36,60 +41,49 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     }));
   };
 
-  // Helper to switch character (New Feature)
-  const switchCharacter = (newChar: Character) => {
-    // We retain current HP percentage or reset? For MVP, let's keep HP percentage roughly or just swap
-    // Swapping directly resets that char's state to full HP if we use the template.
-    // Let's just swap directly for full "Tag Team" feel (fresh character enters)
-    setBattleState(prev => ({
-      ...prev,
-      player: {
-        ...newChar,
-        currentHp: newChar.maxHp // Or prev.player.currentHp if you want to inherit damage
-      }
-    }));
-    
-    addLog(`👉 切换角色：${newChar.name} 加入战斗！`, 'system');
-    resetTTSQueue(); // Stop previous char speaking
+  // Switch Character: Load from Party State
+  const switchCharacter = (targetCharId: string) => {
+    setBattleState(prev => {
+      // Find the character in the persisted party array
+      const nextChar = prev.party.find(c => c.id === targetCharId);
+      if (!nextChar) return prev;
+
+      addLog(`👉 切换角色：${nextChar.name} 加入战斗！(HP: ${nextChar.currentHp}/${nextChar.maxHp})`, 'system');
+      resetTTSQueue();
+
+      return {
+        ...prev,
+        player: nextChar // Swap active player
+      };
+    });
   };
 
-  // ... (previous processSpeechChunk function) ...
   const processSpeechChunk = (textChunk: string) => {
     const fishApiKey = import.meta.env.VITE_FISH_AUDIO_API_KEY;
     const fishRefId = battleState.player.ttsModelId;
-    
     if (!fishApiKey || !fishRefId) return;
 
     speechBuffer.current += textChunk;
     const delimiters = /[，。！？,.!?；;…]/;
     const minSpeakChars = Number(import.meta.env.VITE_TTS_MIN_CHARS || 4);
     
-    // Process ALL complete sentences in the buffer
     while (delimiters.test(speechBuffer.current)) {
       let splitIndex = -1;
       const chars = speechBuffer.current.split('');
-      
-      // Find the FIRST delimiter to split sentences one by one for smoother flow
       for (let i = 0; i < chars.length; i++) {
-        if (delimiters.test(chars[i])) {
-          splitIndex = i;
-          break; // Stop at first delimiter
-        }
+        if (delimiters.test(chars[i])) { splitIndex = i; break; }
       }
 
       if (splitIndex !== -1) {
         const sentenceToSpeak = speechBuffer.current.substring(0, splitIndex + 1);
         const remaining = speechBuffer.current.substring(splitIndex + 1);
-
         const cleaned = sentenceToSpeak.replace(/[，。！？,.!?；;…\s]/g, '');
 
-        // Drop pure punctuation (e.g. "..." or "！！")
         if (cleaned.length === 0) {
           speechBuffer.current = remaining;
           continue;
         }
 
-        // If sentence is too short, merge it with the next one to avoid TTS failures
         if (cleaned.length < minSpeakChars && remaining.trim().length > 0) {
           const merged = sentenceToSpeak.replace(/[，。！？,.!?；;…]+$/g, '') + remaining;
           speechBuffer.current = merged;
@@ -99,30 +93,47 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
         queueCharacterSpeech(sentenceToSpeak, fishApiKey, fishRefId, speechSequence.current);
         speechSequence.current++;
         speechBuffer.current = remaining;
-      } else {
-        break; // Should not happen given while condition, but safety break
-      }
+      } else { break; }
     }
   };
 
-  // Execute a skill
+  const calculateDamage = (attacker: Character, defender: Character, skill: Skill) => {
+    const baseDamage = attacker.stats.attack * skill.value;
+    const dmgBonusMultiplier = 1.0; 
+    const defDenominator = defender.stats.defense + 200 + (10 * attacker.stats.level);
+    const defMultiplier = 1 - (defender.stats.defense / defDenominator);
+    const isCrit = Math.random() < attacker.stats.critRate;
+    const critMultiplier = isCrit ? (1 + attacker.stats.critDamage) : 1.0;
+    const variance = 0.95 + Math.random() * 0.1;
+    
+    let finalDamage = baseDamage * dmgBonusMultiplier * defMultiplier * critMultiplier * variance;
+    finalDamage = Math.floor(finalDamage);
+    const debugInfo = `[公式] 攻${attacker.stats.attack}×倍率${skill.value} = 基伤${baseDamage.toFixed(0)} | 防御区${defMultiplier.toFixed(2)} | 暴击区${critMultiplier} | 最终${finalDamage}`;
+
+    return { finalDamage, isCrit, debugInfo };
+  };
+
   const executeSkill = useCallback((user: Character, target: Character, skill: Skill) => {
     let damage = 0;
     let heal = 0;
     let logMsg = '';
+    let isCrit = false;
+    let debugInfo = '';
 
     if (skill.type === 'attack') {
-      const variance = Math.random() * 0.2 + 0.9; 
-      damage = Math.floor(skill.value * variance);
-      logMsg = `${user.name} 使用了【${skill.name}】，造成了 ${damage} 点伤害！`;
+      const result = calculateDamage(user, target, skill);
+      damage = result.finalDamage;
+      isCrit = result.isCrit;
+      debugInfo = result.debugInfo;
+      const critText = isCrit ? ' (CRITICAL!)' : '';
+      logMsg = `${user.name} 使用【${skill.name}】${critText}，造成 ${damage} 点伤害！\n${debugInfo}`;
     } else if (skill.type === 'heal') {
-      heal = skill.value;
-      logMsg = `${user.name} 使用了【${skill.name}】，恢复了 ${heal} 点生命！`;
+      heal = Math.floor(user.maxHp * skill.value);
+      logMsg = `${user.name} 使用【${skill.name}】，恢复了 ${heal} 点生命！`;
     } else if (skill.type === 'defense') {
-      logMsg = `${user.name} 采取了防御姿态，警惕着对方的攻击。`;
+      logMsg = `${user.name} 采取防御姿态，准备迎接冲击。`;
     }
-
-    return { damage, heal, logMsg };
+    return { damage, heal, logMsg, isCrit };
   }, []);
 
   // Enemy Turn Logic
@@ -132,23 +143,53 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
 
     setBattleState(prev => {
       const enemySkill = prev.enemy.skills[Math.floor(Math.random() * prev.enemy.skills.length)];
+      
+      // Enemy attacks CURRENT active player
       const result = executeSkill(prev.enemy, prev.player, enemySkill);
+      
       const newPlayerHp = Math.max(0, prev.player.currentHp - result.damage);
       const newEnemyHp = Math.min(prev.enemy.maxHp, prev.enemy.currentHp + result.heal);
 
+      // Update Party State
+      const updatedParty = prev.party.map(c => 
+        c.id === prev.player.id ? { ...c, currentHp: newPlayerHp } : c
+      );
+
       const newLogs = [
         ...prev.logs,
-        { id: createLogId(), turn: prev.turn, message: result.logMsg, speaker: 'enemy' as const }
+        { 
+          id: createLogId(), 
+          turn: prev.turn, 
+          message: result.logMsg, 
+          speaker: 'enemy' as const,
+          isCrit: result.isCrit
+        }
       ];
       
       if (newPlayerHp <= 0) {
         newLogs.push({ id: createLogId(), turn: prev.turn, message: `${prev.player.name} 倒下了... 战斗失败。`, speaker: 'system' });
-        return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, phase: 'defeat' };
+        // Update both player ref and party ref
+        return { 
+            ...prev, 
+            player: { ...prev.player, currentHp: newPlayerHp }, 
+            party: updatedParty,
+            enemy: { ...prev.enemy, currentHp: newEnemyHp }, 
+            logs: newLogs, 
+            phase: 'defeat' 
+        };
       }
 
-      return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, phase: 'player_input', turn: prev.turn + 1 };
+      return { 
+          ...prev, 
+          player: { ...prev.player, currentHp: newPlayerHp }, 
+          party: updatedParty,
+          enemy: { ...prev.enemy, currentHp: newEnemyHp }, 
+          logs: newLogs, 
+          phase: 'player_input', 
+          turn: prev.turn + 1 
+      };
     });
-  }, [executeSkill]);
+  }, []); 
 
   // Player Command Handler
   const handleCommand = async (command: string) => {
@@ -197,14 +238,42 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
         const result = executeSkill(prev.player, prev.enemy, skill);
         const newEnemyHp = Math.max(0, prev.enemy.currentHp - result.damage);
         const newPlayerHp = Math.min(prev.player.maxHp, prev.player.currentHp + result.heal);
-        const newLogs = [...prev.logs, { id: createLogId(), turn: prev.turn, message: result.logMsg, speaker: 'system' as const }];
+        
+        // Update Party State
+        const updatedParty = prev.party.map(c => 
+            c.id === prev.player.id ? { ...c, currentHp: newPlayerHp } : c
+        );
+
+        const newLogs = [...prev.logs, { 
+          id: createLogId(), 
+          turn: prev.turn, 
+          message: result.logMsg, 
+          speaker: 'system' as const,
+          isCrit: result.isCrit
+        }];
 
         if (newEnemyHp <= 0) {
            newLogs.push({ id: createLogId(), turn: prev.turn, message: `${prev.enemy.name} 被击败了！战斗胜利！`, speaker: 'system' });
-           return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, isProcessing: false, phase: 'victory' };
+           return { 
+               ...prev, 
+               player: { ...prev.player, currentHp: newPlayerHp }, 
+               party: updatedParty,
+               enemy: { ...prev.enemy, currentHp: newEnemyHp }, 
+               logs: newLogs, 
+               isProcessing: false, 
+               phase: 'victory' 
+            };
         }
 
-        return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, isProcessing: false, phase: 'enemy_action' };
+        return { 
+            ...prev, 
+            player: { ...prev.player, currentHp: newPlayerHp }, 
+            party: updatedParty,
+            enemy: { ...prev.enemy, currentHp: newEnemyHp }, 
+            logs: newLogs, 
+            isProcessing: false, 
+            phase: 'enemy_action' 
+        };
       });
 
     } catch (error) {
@@ -214,13 +283,12 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     }
   };
 
-  // Lifecycle
   useEffect(() => { if (battleState.phase === 'enemy_action') processEnemyTurn(); }, [battleState.phase, processEnemyTurn]);
   useEffect(() => { if (battleState.phase === 'start') setTimeout(() => setBattleState(prev => ({ ...prev, phase: 'player_input' })), 1000); }, [battleState.phase]);
 
   return {
     battleState,
     handleCommand,
-    switchCharacter // Export this
+    switchCharacter
   };
 };

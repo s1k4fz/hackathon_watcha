@@ -5,23 +5,33 @@ export interface Skill {
   id: string;
   name: string;
   type: SkillType;
-  value: number; // Damage or Heal amount
+  value: number; 
   risk: RiskLevel;
   description: string;
   cooldown?: number;
 }
 
+export interface CharacterStats {
+  level: number;
+  attack: number;    
+  defense: number;   
+  critRate: number;  
+  critDamage: number; 
+  speed?: number;     
+}
+
 export interface Character {
   id: string;
   name: string;
-  avatarUrl?: string; // We can use placeholder images for now
+  avatarUrl?: string; 
   maxHp: number;
   currentHp: number;
+  stats: CharacterStats; 
   skills: Skill[];
-  personality: string; // Description for the LLM
-  speakingStyle: string; // Description for the LLM
-  trust?: number; // 0-100, optional
-  ttsModelId?: string; // Fish Audio Reference ID
+  personality: string; 
+  speakingStyle: string; 
+  trust?: number; 
+  ttsModelId?: string; 
 }
 
 export type BattlePhase = 
@@ -34,17 +44,19 @@ export type BattlePhase =
   | 'defeat';
 
 export interface BattleLog {
-  id?: string; // Unique ID for updating logs
+  id?: string; 
   turn: number;
   message: string;
   speaker: 'system' | 'player' | 'enemy';
-  isStreaming?: boolean; // New flag for typing effect
+  isStreaming?: boolean;
+  isCrit?: boolean; 
 }
 
 export interface BattleState {
   turn: number;
   phase: BattlePhase;
-  player: Character;
+  player: Character; // Currently active player character
+  party: Character[]; // New: Full party state to persist HP
   enemy: Character;
   logs: BattleLog[];
   lastPlayerInput?: string;
@@ -52,10 +64,9 @@ export interface BattleState {
   isProcessing: boolean;
 }
 
-// AI Response Structure
 export interface AIActionResponse {
-  interpretation: string; // Understanding of player intent
-  chosen_skill_id: string; // Must match one of the character's skill IDs
-  character_response: string; // What the character says
+  interpretation: string; 
+  chosen_skill_id: string; 
+  character_response: string; 
   confidence: 'high' | 'medium' | 'low';
 }

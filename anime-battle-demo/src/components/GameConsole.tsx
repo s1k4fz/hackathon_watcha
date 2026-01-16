@@ -65,7 +65,23 @@ export const GameConsole: React.FC<GameConsoleProps> = ({ logs, onCommandSubmit,
               </div>
              
               <div className="whitespace-pre-wrap leading-relaxed">
-                {log.message}
+                {log.message.split('\n').map((line, i) => {
+                  // Check if this line is the debug info (starts with [公式])
+                  if (line.startsWith('[公式]')) {
+                    return (
+                      <div key={i} className="text-[10px] text-gray-500 mt-1 font-mono border-t border-white/5 pt-1">
+                        {line}
+                      </div>
+                    );
+                  }
+                  return (
+                    <span key={i} className={log.isCrit ? "text-yellow-400 font-bold drop-shadow-md text-lg" : ""}>
+                      {line}
+                      {log.isCrit && i === 0 && <span className="ml-2 text-red-500 text-sm animate-pulse">💥 CRITICAL HIT!</span>}
+                      {i < log.message.split('\n').length - 1 && <br />}
+                    </span>
+                  );
+                })}
                 {log.isStreaming && <span className="inline-block w-2 h-4 bg-indigo-500 ml-1 animate-pulse align-middle" />}
               </div>
             </motion.div>

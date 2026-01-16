@@ -97,9 +97,11 @@ export const queueCharacterSpeech = async (
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`TTS API Error (Index ${index}):`, response.status, errorText);
       const task = playbackQueue.get(index);
       if (task) task.status = 'failed';
-      processQueue(); // Check if this unblocks queue
+      processQueue(); 
       return;
     }
 

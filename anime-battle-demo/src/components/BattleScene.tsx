@@ -34,7 +34,8 @@ export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacte
         {/* Switch Character Button */}
         <button 
           onClick={() => setShowCharSelect(!showCharSelect)}
-          disabled={phase !== 'player_input' || isProcessing}
+          // Always enabled except when processing AI/Action, allowing switch at start of turn
+          disabled={isProcessing || (phase !== 'player_input' && phase !== 'start')}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/50 rounded-lg text-sm text-indigo-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Users className="w-4 h-4" />
@@ -56,12 +57,13 @@ export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacte
             className="absolute top-20 left-0 right-0 z-50 flex justify-center gap-4 p-4"
           >
             <div className="bg-gray-900/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl flex gap-4">
-              {availableCharacters.map(char => (
+              {/* Iterate over PARTY state instead of static list to show current HP */}
+              {battleState.party.map(char => (
                 <button
                   key={char.id}
                   onClick={() => {
                     if (char.id !== player.id) {
-                      switchCharacter(char);
+                      switchCharacter(char.id); // Pass ID instead of object
                       setShowCharSelect(false);
                     }
                   }}
@@ -71,8 +73,11 @@ export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacte
                   <div className="absolute inset-0 flex items-center justify-center text-3xl">
                     {char.id === 'kiana' ? '🔥' : char.id === 'elysia' ? '🌸' : '⚡️'}
                   </div>
-                  <div className="absolute bottom-0 w-full bg-black/60 text-[10px] py-1 text-center font-bold truncate px-1">
-                    {char.name}
+                  <div className="absolute bottom-0 w-full bg-black/60 text-[10px] py-1 text-center font-bold truncate px-1 flex flex-col">
+                    <span>{char.name}</span>
+                    <span className={`text-[8px] ${char.currentHp <= 0 ? 'text-red-500' : 'text-green-400'}`}>
+                       HP: {char.currentHp}/{char.maxHp}
+                    </span>
                   </div>
                 </button>
               ))}
