@@ -6,17 +6,17 @@ import { queueCharacterSpeech, resetTTSQueue } from '../services/tts';
 
 const createLogId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
-  // Initialize Party with independent objects to avoid reference issues
-  const initialParty = availableCharacters.map(c => ({ ...c })); 
-  // Ensure the selected initial char is synchronized with the party version
+export const useBattle = (apiKey: string, initialPlayerChar: Character, customCharacters: Character[] = []) => {
+  // Initialize Party
+  // Merge default characters with any custom ones passed in
+  const initialParty = [...availableCharacters, ...customCharacters].map(c => ({ ...c })); 
   const startChar = initialParty.find(c => c.id === initialPlayerChar.id) || initialParty[0];
 
   const [battleState, setBattleState] = useState<BattleState>({
     turn: 1,
     phase: 'start',
     player: startChar,
-    party: initialParty, // Persist full party state
+    party: initialParty,
     enemy: { ...initialEnemy },
     logs: [{ id: createLogId(), turn: 0, message: '战斗开始！遭遇暗影骑士！', speaker: 'system' }],
     isProcessing: false
@@ -41,19 +41,24 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     }));
   };
 
-  // Switch Character: Load from Party State
   const switchCharacter = (targetCharId: string) => {
+    resetTTSQueue();
     setBattleState(prev => {
-      // Find the character in the persisted party array
       const nextChar = prev.party.find(c => c.id === targetCharId);
       if (!nextChar) return prev;
 
-      addLog(`👉 切换角色：${nextChar.name} 加入战斗！(HP: ${nextChar.currentHp}/${nextChar.maxHp})`, 'system');
-      resetTTSQueue();
+      const newLog: BattleLog = {
+        id: createLogId(),
+        turn: prev.turn,
+        message: `👉 切换角色：${nextChar.name} 加入战斗！(HP: ${nextChar.currentHp}/${nextChar.maxHp})`,
+        speaker: 'system',
+        isCrit: false
+      };
 
       return {
         ...prev,
-        player: nextChar // Swap active player
+        player: nextChar,
+        logs: [...prev.logs, newLog]
       };
     });
   };
@@ -97,8 +102,9 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     }
   };
 
-  const calculateDamage = (attacker: Character, defender: Character, skill: Skill) => {
-    const baseDamage = attacker.stats.attack * skill.value;
+  // Base Damage Calculation (Reusable)
+  const calculateDamage = (attacker: Character, defender: Character, valueMultiplier: number) => {
+    const baseDamage = attacker.stats.attack * valueMultiplier;
     const dmgBonusMultiplier = 1.0; 
     const defDenominator = defender.stats.defense + 200 + (10 * attacker.stats.level);
     const defMultiplier = 1 - (defender.stats.defense / defDenominator);
@@ -108,32 +114,53 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     
     let finalDamage = baseDamage * dmgBonusMultiplier * defMultiplier * critMultiplier * variance;
     finalDamage = Math.floor(finalDamage);
-    const debugInfo = `[公式] 攻${attacker.stats.attack}×倍率${skill.value} = 基伤${baseDamage.toFixed(0)} | 防御区${defMultiplier.toFixed(2)} | 暴击区${critMultiplier} | 最终${finalDamage}`;
+    const debugInfo = `[公式] 攻${attacker.stats.attack}×倍率${valueMultiplier} = 基伤${baseDamage.toFixed(0)} | 防御区${defMultiplier.toFixed(2)} | 暴击区${critMultiplier} | 最终${finalDamage}`;
 
     return { finalDamage, isCrit, debugInfo };
   };
 
+  // NEW: Execute Skill with Effect System
   const executeSkill = useCallback((user: Character, target: Character, skill: Skill) => {
-    let damage = 0;
-    let heal = 0;
-    let logMsg = '';
-    let isCrit = false;
-    let debugInfo = '';
+    let totalDamage = 0;
+    let totalHeal = 0;
+    let logMsg = `${user.name} 使用了【${skill.name}】！`;
+    let isCritGlobal = false;
+    let debugInfos: string[] = [];
 
-    if (skill.type === 'attack') {
-      const result = calculateDamage(user, target, skill);
-      damage = result.finalDamage;
-      isCrit = result.isCrit;
-      debugInfo = result.debugInfo;
-      const critText = isCrit ? ' (CRITICAL!)' : '';
-      logMsg = `${user.name} 使用【${skill.name}】${critText}，造成 ${damage} 点伤害！\n${debugInfo}`;
-    } else if (skill.type === 'heal') {
-      heal = Math.floor(user.maxHp * skill.value);
-      logMsg = `${user.name} 使用【${skill.name}】，恢复了 ${heal} 点生命！`;
-    } else if (skill.type === 'defense') {
-      logMsg = `${user.name} 采取防御姿态，准备迎接冲击。`;
+    // Iterate through all effects
+    skill.effects.forEach(effect => {
+      if (effect.type === 'damage') {
+        // Calculate damage against target
+        const res = calculateDamage(user, target, effect.value);
+        totalDamage += res.finalDamage;
+        if (res.isCrit) isCritGlobal = true;
+        debugInfos.push(res.debugInfo);
+      } 
+      else if (effect.type === 'heal') {
+        // Calculate heal amount based on User's Max HP
+        const amount = Math.floor(user.maxHp * effect.value);
+        totalHeal += amount;
+      }
+      else if (effect.type === 'defense') {
+        // Just log for now, maybe add buff status later
+        logMsg += ` (防御姿态)`;
+      }
+    });
+
+    if (totalDamage > 0) {
+      logMsg += ` 造成了 ${totalDamage} 点伤害！`;
+      if (isCritGlobal) logMsg += ' (CRITICAL!)';
     }
-    return { damage, heal, logMsg, isCrit };
+    if (totalHeal > 0) {
+      logMsg += ` 恢复了 ${totalHeal} 点生命！`;
+    }
+
+    // Append debug info if any damage was dealt
+    if (debugInfos.length > 0) {
+      logMsg += `\n${debugInfos.join('\n')}`;
+    }
+
+    return { damage: totalDamage, heal: totalHeal, logMsg, isCrit: isCritGlobal };
   }, []);
 
   // Enemy Turn Logic
@@ -144,13 +171,11 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
     setBattleState(prev => {
       const enemySkill = prev.enemy.skills[Math.floor(Math.random() * prev.enemy.skills.length)];
       
-      // Enemy attacks CURRENT active player
       const result = executeSkill(prev.enemy, prev.player, enemySkill);
       
       const newPlayerHp = Math.max(0, prev.player.currentHp - result.damage);
       const newEnemyHp = Math.min(prev.enemy.maxHp, prev.enemy.currentHp + result.heal);
 
-      // Update Party State
       const updatedParty = prev.party.map(c => 
         c.id === prev.player.id ? { ...c, currentHp: newPlayerHp } : c
       );
@@ -168,7 +193,6 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
       
       if (newPlayerHp <= 0) {
         newLogs.push({ id: createLogId(), turn: prev.turn, message: `${prev.player.name} 倒下了... 战斗失败。`, speaker: 'system' });
-        // Update both player ref and party ref
         return { 
             ...prev, 
             player: { ...prev.player, currentHp: newPlayerHp }, 
@@ -209,6 +233,9 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
 
     try {
       const currentLogs = battleState.logs; 
+      // Find user persona (if any) in the party
+      const userPersona = battleState.party.find(c => c.id.startsWith('user_'));
+
       const aiResponse = await analyzeCommandStream(
         apiKey, command, currentLogs, battleState.player, battleState.enemy, battleState.turn,
         (fullDisplayContent) => {
@@ -218,7 +245,8 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
             processSpeechChunk(newContent); 
             lastProcessedLength = fullDisplayContent.length;
           }
-        }
+        },
+        userPersona // Pass user persona to AI
       );
 
       updateLog(streamingLogId, aiResponse.character_response, false);
@@ -239,7 +267,6 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
         const newEnemyHp = Math.max(0, prev.enemy.currentHp - result.damage);
         const newPlayerHp = Math.min(prev.player.maxHp, prev.player.currentHp + result.heal);
         
-        // Update Party State
         const updatedParty = prev.party.map(c => 
             c.id === prev.player.id ? { ...c, currentHp: newPlayerHp } : c
         );
@@ -286,9 +313,53 @@ export const useBattle = (apiKey: string, initialPlayerChar: Character) => {
   useEffect(() => { if (battleState.phase === 'enemy_action') processEnemyTurn(); }, [battleState.phase, processEnemyTurn]);
   useEffect(() => { if (battleState.phase === 'start') setTimeout(() => setBattleState(prev => ({ ...prev, phase: 'player_input' })), 1000); }, [battleState.phase]);
 
+  // Player Direct Skill Handler (For User Characters)
+  const handleSkillSelection = async (skillId: string) => {
+    if (battleState.phase !== 'player_input') return;
+
+    const skill = battleState.player.skills.find(s => s.id === skillId);
+    if (!skill) return;
+
+    setBattleState(prev => ({ 
+      ...prev, isProcessing: true, phase: 'player_action' 
+    }));
+
+    // Log the action (Removed to avoid duplicate "Used Skill" logs)
+    // addLog(`${battleState.player.name} 使用了 【${skill.name}】`, 'player');
+    
+    // Simulate a brief delay for visual effect
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    setBattleState(prev => {
+      const result = executeSkill(prev.player, prev.enemy, skill);
+      const newEnemyHp = Math.max(0, prev.enemy.currentHp - result.damage);
+      const newPlayerHp = Math.min(prev.player.maxHp, prev.player.currentHp + result.heal);
+
+      const updatedParty = prev.party.map(char => 
+        char.id === prev.player.id ? { ...prev.player, currentHp: newPlayerHp } : char
+      );
+
+      const newLogs = [...prev.logs, { 
+        id: createLogId(), 
+        turn: prev.turn, 
+        message: result.logMsg, 
+        speaker: 'system' as const,
+        isCrit: result.isCrit
+      }];
+
+      if (newEnemyHp <= 0) {
+         newLogs.push({ id: createLogId(), turn: prev.turn, message: `${prev.enemy.name} 被击败了！战斗胜利！`, speaker: 'system' });
+         return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, isProcessing: false, phase: 'victory', party: updatedParty };
+      }
+
+      return { ...prev, player: { ...prev.player, currentHp: newPlayerHp }, enemy: { ...prev.enemy, currentHp: newEnemyHp }, logs: newLogs, isProcessing: false, phase: 'enemy_action', party: updatedParty };
+    });
+  };
+
   return {
     battleState,
     handleCommand,
+    handleSkillSelection, // Export new handler
     switchCharacter
   };
 };

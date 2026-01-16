@@ -10,10 +10,11 @@ import { Users } from 'lucide-react';
 interface BattleSceneProps {
   apiKey: string;
   playerCharacter: Character;
+  customCharacters: Character[];
 }
 
-export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacter }) => {
-  const { battleState, handleCommand, switchCharacter } = useBattle(apiKey, playerCharacter);
+export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacter, customCharacters }) => {
+  const { battleState, handleCommand, handleSkillSelection, switchCharacter } = useBattle(apiKey, playerCharacter, customCharacters);
   const { player, enemy, phase, logs, isProcessing } = battleState;
   const [showCharSelect, setShowCharSelect] = useState(false);
 
@@ -135,9 +136,11 @@ export const BattleScene: React.FC<BattleSceneProps> = ({ apiKey, playerCharacte
       <div className="mt-8 relative z-20">
         <GameConsole 
           logs={logs} 
-          onCommandSubmit={handleCommand} 
+          onCommandSubmit={handleCommand}
+          onSkillSelect={handleSkillSelection}
           isProcessing={isProcessing}
           phase={phase}
+          currentPlayer={player}
         />
       </div>
 

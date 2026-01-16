@@ -2,48 +2,54 @@ import type { Character, Skill } from '../types/game';
 import { TTS_CONFIG } from './ttsConfig';
 
 // ------------------------------------------------------------------
-// 琪亚娜 (Kiana) - 均衡型
+// 琪亚娜 (Kiana)
 // ------------------------------------------------------------------
 const kianaSkills: Skill[] = [
   {
     id: 'skill_basic',
     name: '普通射击',
-    type: 'attack',
-    value: 1.0, // 100% ATK
+    description: '快速的双枪射击。',
     risk: 'low',
-    description: '快速的双枪射击。'
+    effects: [
+      { type: 'damage', value: 1.0, target: 'enemy' }
+    ]
   },
   {
     id: 'skill_strong',
     name: '猫猫回旋踢',
-    type: 'attack',
-    value: 2.2, // 220% ATK
+    description: '强力的近身格斗技。',
     risk: 'medium',
-    description: '强力的近身格斗技。'
+    effects: [
+      { type: 'damage', value: 2.2, target: 'enemy' }
+    ]
   },
   {
     id: 'skill_ult',
     name: '冈格尼尔·爆裂',
-    type: 'attack',
-    value: 3.5, // 350% ATK
+    description: '孤注一掷的全力炮击。',
     risk: 'high',
-    description: '孤注一掷的全力炮击。'
+    effects: [
+      { type: 'damage', value: 3.5, target: 'enemy' }
+    ]
   },
   {
     id: 'skill_def',
     name: '虚数屏障',
-    type: 'defense',
-    value: 0.5, // 50% DMG reduction (not used in formula yet but logically)
+    description: '展开护盾，防御并恢复少量体力。',
     risk: 'low',
-    description: '展开护盾。'
+    effects: [
+      { type: 'defense', value: 0.5, target: 'self' }, // 50% 减伤
+      { type: 'heal', value: 0.05, target: 'self' }    // 额外回 5% 血
+    ]
   },
   {
     id: 'skill_heal',
     name: '应急食品',
-    type: 'heal',
-    value: 0.3, // Heals 30% of Max HP
+    description: '吃掉藏在身上的零食。',
     risk: 'low',
-    description: '吃掉藏在身上的零食。'
+    effects: [
+      { type: 'heal', value: 0.3, target: 'self' }
+    ]
   }
 ];
 
@@ -56,8 +62,8 @@ export const charKiana: Character = {
     level: 50,
     attack: 300,
     defense: 200,
-    critRate: 0.15,   // 15%
-    critDamage: 0.50, // 50%
+    critRate: 0.15,   
+    critDamage: 0.50, 
   },
   skills: kianaSkills,
   ttsModelId: TTS_CONFIG.kiana,
@@ -66,48 +72,53 @@ export const charKiana: Character = {
 };
 
 // ------------------------------------------------------------------
-// 爱莉希雅 (Elysia) - 高暴击远程
+// 爱莉希雅 (Elysia)
 // ------------------------------------------------------------------
 const elysiaSkills: Skill[] = [
   {
     id: 'elysia_atk',
     name: '沉醉之矢',
-    type: 'attack',
-    value: 1.2,
+    description: '爱莉希雅轻盈地射出水晶箭矢。',
     risk: 'low',
-    description: '爱莉希雅轻盈地射出水晶箭矢。'
+    effects: [
+      { type: 'damage', value: 1.2, target: 'enemy' }
+    ]
   },
   {
     id: 'elysia_strong',
     name: '爱之初源',
-    type: 'attack',
-    value: 2.5,
+    description: '在敌人周围生成水晶花种并引爆。',
     risk: 'medium',
-    description: '在敌人周围生成水晶花种并引爆。'
+    effects: [
+      { type: 'damage', value: 2.5, target: 'enemy' }
+    ]
   },
   {
     id: 'elysia_ult',
     name: '无瑕·圣域',
-    type: 'attack',
-    value: 4.0,
+    description: '展开巨大的水晶穹顶，万箭齐发。',
     risk: 'high',
-    description: '展开巨大的水晶穹顶，万箭齐发。'
+    effects: [
+      { type: 'damage', value: 4.0, target: 'enemy' }
+    ]
   },
   {
     id: 'elysia_def',
     name: '水晶屏障',
-    type: 'defense',
-    value: 0.4,
+    description: '凝聚水晶保护自己。',
     risk: 'low',
-    description: '凝聚水晶保护自己。'
+    effects: [
+      { type: 'defense', value: 0.4, target: 'self' }
+    ]
   },
   {
     id: 'elysia_heal',
     name: '治愈时刻',
-    type: 'heal',
-    value: 0.35,
+    description: '哼着歌稍作休息。',
     risk: 'low',
-    description: '哼着歌稍作休息。'
+    effects: [
+      { type: 'heal', value: 0.35, target: 'self' }
+    ]
   }
 ];
 
@@ -118,10 +129,10 @@ export const charElysia: Character = {
   currentHp: 1000,
   stats: {
     level: 50,
-    attack: 350,       // Higher Attack
-    defense: 150,      // Lower Defense
-    critRate: 0.30,    // High Crit Rate
-    critDamage: 0.80,  // High Crit DMG
+    attack: 350,       
+    defense: 150,      
+    critRate: 0.30,    
+    critDamage: 0.80,  
   },
   skills: elysiaSkills,
   ttsModelId: TTS_CONFIG.elysia,
@@ -130,48 +141,53 @@ export const charElysia: Character = {
 };
 
 // ------------------------------------------------------------------
-// 雷电芽衣 (Raiden Mei) - 高攻均衡
+// 雷电芽衣 (Raiden Mei)
 // ------------------------------------------------------------------
 const meiSkills: Skill[] = [
   {
     id: 'mei_atk',
     name: '太刀·连斩',
-    type: 'attack',
-    value: 1.1,
+    description: '迅捷的太刀连击。',
     risk: 'low',
-    description: '迅捷的太刀连击。'
+    effects: [
+      { type: 'damage', value: 1.1, target: 'enemy' }
+    ]
   },
   {
     id: 'mei_strong',
     name: '祸斗·雷闪',
-    type: 'attack',
-    value: 2.4,
+    description: '召唤落雷附着于刀身，发动强力的一闪。',
     risk: 'medium',
-    description: '召唤落雷附着于刀身，发动强力的一闪。'
+    effects: [
+      { type: 'damage', value: 2.4, target: 'enemy' }
+    ]
   },
   {
     id: 'mei_ult',
     name: '鸣神·俱利伽罗',
-    type: 'attack',
-    value: 3.8,
+    description: '召唤俱利伽罗龙，驾驭巨龙进行轰炸。',
     risk: 'high',
-    description: '召唤俱利伽罗龙，驾驭巨龙进行轰炸。'
+    effects: [
+      { type: 'damage', value: 3.8, target: 'enemy' }
+    ]
   },
   {
     id: 'mei_def',
     name: '心眼·格挡',
-    type: 'defense',
-    value: 0.6,
+    description: '进入心眼状态。',
     risk: 'low',
-    description: '进入心眼状态。'
+    effects: [
+      { type: 'defense', value: 0.6, target: 'self' }
+    ]
   },
   {
     id: 'mei_heal',
     name: '煮饭时刻',
-    type: 'heal',
-    value: 0.3,
+    description: '拿出一份精心准备的便当。',
     risk: 'low',
-    description: '拿出一份精心准备的便当。'
+    effects: [
+      { type: 'heal', value: 0.3, target: 'self' }
+    ]
   }
 ];
 
@@ -194,35 +210,37 @@ export const charMei: Character = {
 };
 
 // ------------------------------------------------------------------
-// 敌人设定 (Shadow Knight) - Boss Stats
+// 敌人设定 (Shadow Knight)
 // ------------------------------------------------------------------
 const enemyAttack: Skill = {
   id: 'enemy_atk',
   name: '暗影斩',
-  type: 'attack',
-  value: 1.0,
+  description: '带着暗影能量的斩击。',
   risk: 'medium',
-  description: '带着暗影能量的斩击。'
+  effects: [
+    { type: 'damage', value: 1.0, target: 'enemy' }
+  ]
 };
 
 const enemyStrong: Skill = {
   id: 'enemy_strong',
   name: '深渊突刺',
-  type: 'attack',
-  value: 1.8,
+  description: '致命的突进攻击。',
   risk: 'high',
-  description: '致命的突进攻击。'
+  effects: [
+    { type: 'damage', value: 1.8, target: 'enemy' }
+  ]
 };
 
 export const initialEnemy: Character = {
   id: 'shadow_knight',
   name: '暗影骑士',
-  maxHp: 5000, // Boss HP
+  maxHp: 5000, 
   currentHp: 5000,
   stats: {
-    level: 55,       // Slightly higher level
-    attack: 280,     // Decent attack
-    defense: 400,    // High Defense (Tanky)
+    level: 55,       
+    attack: 280,     
+    defense: 400,    
     critRate: 0.10,
     critDamage: 0.50,
   },

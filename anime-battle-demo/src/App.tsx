@@ -8,6 +8,19 @@ function App() {
   // Try to get key from environment variables first
   const [apiKey, setApiKey] = useState<string>(import.meta.env.VITE_OPENROUTER_API_KEY || '');
   const [selectedChar, setSelectedChar] = useState<Character | null>(null);
+  const [customCharacters, setCustomCharacters] = useState<Character[]>([]);
+
+  const handleCharacterCreated = (newChar: Character) => {
+    console.log("Character Created:", newChar);
+    // Use functional update to ensure we have the latest state, 
+    // AND explicitly pass the new list to BattleScene via state to avoid race conditions
+    setCustomCharacters(prev => {
+      const newList = [...prev, newChar];
+      console.log("Updated Custom Characters:", newList);
+      return newList;
+    });
+    setSelectedChar(newChar); 
+  };
 
   if (!apiKey) {
     return (
@@ -18,12 +31,23 @@ function App() {
   }
 
   if (!selectedChar) {
-    return <CharacterSelection onSelect={setSelectedChar} />;
+    return (
+      <CharacterSelection 
+        apiKey={apiKey} 
+        onSelect={setSelectedChar} 
+        customCharacters={customCharacters}
+        onCharacterCreated={handleCharacterCreated}
+      />
+    );
   }
 
   return (
     <div className="w-full h-screen bg-gray-950 text-white overflow-hidden flex items-center justify-center">
-       <BattleScene apiKey={apiKey} playerCharacter={selectedChar} />
+       <BattleScene 
+         apiKey={apiKey} 
+         playerCharacter={selectedChar} 
+         customCharacters={customCharacters}
+       />
     </div>
   );
 }
