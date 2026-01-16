@@ -21,6 +21,7 @@ export interface Character {
   personality: string; // Description for the LLM
   speakingStyle: string; // Description for the LLM
   trust?: number; // 0-100, optional
+  ttsModelId?: string; // Fish Audio Reference ID
 }
 
 export type BattlePhase = 
@@ -33,9 +34,11 @@ export type BattlePhase =
   | 'defeat';
 
 export interface BattleLog {
+  id?: string; // Unique ID for updating logs
   turn: number;
   message: string;
   speaker: 'system' | 'player' | 'enemy';
+  isStreaming?: boolean; // New flag for typing effect
 }
 
 export interface BattleState {

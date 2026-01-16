@@ -20,7 +20,7 @@ export const GameConsole: React.FC<GameConsoleProps> = ({ logs, onCommandSubmit,
 
   useEffect(() => {
     scrollToBottom();
-  }, [logs]);
+  }, [logs]); // Scroll whenever logs change (including streaming updates)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +44,7 @@ export const GameConsole: React.FC<GameConsoleProps> = ({ logs, onCommandSubmit,
         <AnimatePresence>
           {logs.map((log, index) => (
             <motion.div
-              key={index}
+              key={log.id || index} // Use ID if available for stable keys during updates
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               className={`p-2 rounded border-l-2 ${
@@ -55,10 +55,19 @@ export const GameConsole: React.FC<GameConsoleProps> = ({ logs, onCommandSubmit,
                   : 'bg-gray-800/40 border-gray-500 text-gray-300'
               }`}
             >
-              <span className="font-bold opacity-70 mr-2 uppercase text-xs tracking-wider">
-                {log.speaker === 'system' ? 'SYSTEM' : log.speaker === 'player' ? 'COMMAND' : 'CHAR'}
-              </span>
-              {log.message}
+              <div className="flex items-center gap-2 mb-1">
+                 <span className="font-bold opacity-70 uppercase text-xs tracking-wider">
+                  {log.speaker === 'system' ? 'SYSTEM' : log.speaker === 'player' ? 'COMMAND' : 'CHAR'}
+                </span>
+                {log.isStreaming && (
+                   <span className="w-2 h-2 bg-indigo-400 rounded-full animate-pulse"/>
+                )}
+              </div>
+             
+              <div className="whitespace-pre-wrap leading-relaxed">
+                {log.message}
+                {log.isStreaming && <span className="inline-block w-2 h-4 bg-indigo-500 ml-1 animate-pulse align-middle" />}
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>

@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { Character, Skill, AIActionResponse } from '../types/game';
+import type { Character, Skill, AIActionResponse, BattleLog } from '../types/game';
 
 // System Prompt Template
 const generateSystemPrompt = (character: Character, battleContext: string) => `
@@ -10,39 +10,42 @@ const generateSystemPrompt = (character: Character, battleContext: string) => `
 当前战斗状态：
 ${battleContext}
 
-可用技能列表（请严格从这里选择）：
-${character.skills.map(s => `- ID: ${s.id} | 名称: ${s.name} | 类型: ${s.type} | 描述: ${s.description}`).join('\n')}
+可用技能列表：
+${character.skills.map(s => `- ID: ${s.id} | 名称: ${s.name} | 描述: ${s.description}`).join('\n')}
 
 你的任务：
-1. 分析玩家输入的自然语言指令（可能是模糊的战术意图）。
-2. 根据你的性格和当前战况，决定使用哪个技能。
-3. 生成一句符合你性格的台词作为回应。
+1. 像人类一样自然地回复玩家，表达你的战术想法或情感。
+2. 决定使用哪个技能。
+3. 参考之前的对话历史，保持连贯性。
+4. **重要：战斗紧张激烈，请务必将回复控制在 80 字以内！**
 
 输出格式要求：
-请仅返回一个标准的 JSON 对象，不要包含 markdown 格式或其他废话。格式如下：
-{
-  "interpretation": "你对玩家指令的战术理解",
-  "chosen_skill_id": "选择的技能ID (必须完全匹配)",
-  "character_response": "你的台词 (务必符合人设)",
-  "confidence": "high" | "medium" | "low"
-}
+请直接输出对话内容，不要使用 JSON。
+在回复的最后，必须换行并加上技能指令，格式严格如下：
+[SKILL:技能ID]
+
+示例：
+指挥官，看我的吧！这招一定能行！
+[SKILL:skill_strong]
 `;
 
-export const analyzeCommand = async (
+export const analyzeCommandStream = async (
   apiKey: string,
   playerInput: string,
+  history: BattleLog[], // New: Receive history
   character: Character,
   enemy: Character,
-  turn: number
+  turn: number,
+  onStream: (text: string) => void
 ): Promise<AIActionResponse> => {
   
   const openai = new OpenAI({
     baseURL: "https://openrouter.ai/api/v1",
     apiKey: apiKey,
-    dangerouslyAllowBrowser: true, // Allowed for Hackathon Demos
+    dangerouslyAllowBrowser: true,
     defaultHeaders: {
-      "HTTP-Referer": window.location.href, // Site URL
-      "X-Title": "Anime Battle Demo", // Site Title
+      "HTTP-Referer": window.location.href,
+      "X-Title": "Anime Battle Demo",
     },
   });
 
@@ -52,45 +55,64 @@ export const analyzeCommand = async (
   - 敌人(${enemy.name})HP: ${enemy.currentHp}/${enemy.maxHp}
   `;
 
+  // Convert BattleLog[] to OpenAI Message[]
+  const conversationHistory = history
+    .filter(log => log.speaker === 'player' || (log.speaker === 'system' && !log.message.includes('使用了'))) // Filter out battle system notifications, keep dialogue
+    .map(log => ({
+      role: log.speaker === 'player' ? 'user' : 'assistant',
+      content: log.message
+    } as const));
+
+  // Limit history to last 10 messages to save context window
+  const recentHistory = conversationHistory.slice(-10);
+
   try {
-    const completion = await openai.chat.completions.create({
+    const stream = await openai.chat.completions.create({
       messages: [
         { 
           role: "system", 
           content: generateSystemPrompt(character, battleContext) 
         },
+        ...recentHistory, // Insert History
         { 
           role: "user", 
           content: `玩家指令: "${playerInput}"` 
         }
       ],
-      // Using model from env or default to a free fast model
       model: import.meta.env.VITE_AI_MODEL || "google/gemini-2.0-flash-lite-preview-02-05:free", 
-      response_format: { type: "json_object" },
       temperature: parseFloat(import.meta.env.VITE_AI_TEMPERATURE || "0.7"),
+      stream: true, 
     });
 
-    const content = completion.choices[0].message.content;
-    if (!content) throw new Error("No content returned");
-
-    const result = JSON.parse(content) as AIActionResponse;
+    let fullContent = '';
     
-    // Validate skill exists
-    const skillExists = character.skills.some(s => s.id === result.chosen_skill_id);
-    if (!skillExists) {
-      console.warn("AI chose invalid skill, defaulting to first skill");
-      result.chosen_skill_id = character.skills[0].id;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      fullContent += content;
+      
+      // Clean up the skill tag from display
+      const displayContent = fullContent.replace(/\[SKILL:.*?\]/g, '').trim();
+      onStream(displayContent);
     }
 
-    return result;
+    // Parse the final result
+    const skillMatch = fullContent.match(/\[SKILL:(.*?)\]/);
+    const chosenSkillId = skillMatch ? skillMatch[1].trim() : character.skills[0].id; 
+    const finalResponse = fullContent.replace(/\[SKILL:.*?\]/g, '').trim();
+
+    return {
+      interpretation: "streaming",
+      chosen_skill_id: chosenSkillId,
+      character_response: finalResponse,
+      confidence: 'high'
+    };
 
   } catch (error) {
-    console.error("AI Service Error:", error);
-    // Fallback response so the game doesn't crash
+    console.error("AI Stream Error:", error);
     return {
-      interpretation: "通讯受到干扰...",
+      interpretation: "error",
       chosen_skill_id: character.skills[0].id,
-      character_response: "指挥官？OpenRouter 信号好像断了... 我先自由行动了！",
+      character_response: "（通讯信号受到强烈干扰...）",
       confidence: "low"
     };
   }
