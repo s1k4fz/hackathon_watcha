@@ -4,7 +4,8 @@ export type EffectType =
   | 'damage'       // 造成伤害 (基于攻击力)
   | 'heal'         // 治疗生命 (基于最大生命)
   | 'defense'      // 防御姿态 (获得减伤buff)
-  | 'buff_atk';    // 提升攻击 (下回合生效)
+  | 'buff_atk'     // 提升攻击 (下回合生效)
+  | 'self_damage'; // 自我伤害
 
 export interface SkillEffect {
   type: EffectType;
@@ -27,8 +28,17 @@ export interface CharacterStats {
   defense: number;   
   critRate: number;  
   critDamage: number; 
-  speed?: number;     
+  speed: number;      // 基础速度
+  dodgeRate?: number; // Added for Wasteland bond
 }
+
+export type Faction = 
+  | 'dawn_legacy'       // 晓光机关·遗产
+  | 'crimson_heavy'     // 绯红重工
+  | 'wasteland_drifters'// 荒原流浪者
+  | 'deep_dive'         // 深潜结社
+  | 'ai_awakened'       // 智械觉醒
+  | 'other';            // 其他/联动角色
 
 export interface Character {
   id: string;
@@ -41,7 +51,11 @@ export interface Character {
   personality: string; 
   speakingStyle: string; 
   trust?: number; 
-  ttsModelId?: string; 
+  ttsModelId?: string;
+  faction?: Faction;
+  
+  // Runtime State for Speed System
+  currentActionValue?: number; // 当前行动值 (AV)
 }
 
 export type BattlePhase = 
@@ -62,16 +76,28 @@ export interface BattleLog {
   isCrit?: boolean; 
 }
 
+export interface ActiveBond {
+  id: string;
+  name: string;
+  description: string;
+  active: boolean;
+  characters: string[]; // Character IDs involved
+}
+
 export interface BattleState {
   turn: number;
   phase: BattlePhase;
-  player: Character; 
+  player: Character; // Note: In speed system, 'player' usually refers to the 'active character' if it's a player unit
   party: Character[]; 
   enemy: Character;
   logs: BattleLog[];
   lastPlayerInput?: string;
   lastAiInterpretation?: string;
   isProcessing: boolean;
+  activeBonds: ActiveBond[];
+  
+  // Speed System State
+  actionQueue: Character[]; // Calculated queue of who acts next (for UI display)
 }
 
 export interface AIActionResponse {

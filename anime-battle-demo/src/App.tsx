@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BattleScene } from './components/BattleScene';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { CharacterSelection } from './components/CharacterSelection';
@@ -7,19 +7,23 @@ import type { Character } from './types/game';
 function App() {
   // Try to get key from environment variables first
   const [apiKey, setApiKey] = useState<string>(import.meta.env.VITE_OPENROUTER_API_KEY || '');
-  const [selectedChar, setSelectedChar] = useState<Character | null>(null);
+  const [selectedParty, setSelectedParty] = useState<Character[]>([]);
   const [customCharacters, setCustomCharacters] = useState<Character[]>([]);
 
   const handleCharacterCreated = (newChar: Character) => {
     console.log("Character Created:", newChar);
-    // Use functional update to ensure we have the latest state, 
-    // AND explicitly pass the new list to BattleScene via state to avoid race conditions
     setCustomCharacters(prev => {
       const newList = [...prev, newChar];
       console.log("Updated Custom Characters:", newList);
       return newList;
     });
-    setSelectedChar(newChar); 
+    // Don't auto-select into battle anymore, let user choose in squad selection
+    // But we might want to toggle it as selected in the UI? 
+    // For now, just add to list and user picks.
+  };
+
+  const handleStartBattle = (party: Character[]) => {
+    setSelectedParty(party);
   };
 
   if (!apiKey) {
@@ -30,11 +34,11 @@ function App() {
     );
   }
 
-  if (!selectedChar) {
+  if (selectedParty.length === 0) {
     return (
       <CharacterSelection 
         apiKey={apiKey} 
-        onSelect={setSelectedChar} 
+        onStart={handleStartBattle} 
         customCharacters={customCharacters}
         onCharacterCreated={handleCharacterCreated}
       />
@@ -45,8 +49,7 @@ function App() {
     <div className="w-full h-screen bg-gray-950 text-white overflow-hidden flex items-center justify-center">
        <BattleScene 
          apiKey={apiKey} 
-         playerCharacter={selectedChar} 
-         customCharacters={customCharacters}
+         initialParty={selectedParty}
        />
     </div>
   );
