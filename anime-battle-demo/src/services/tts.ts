@@ -12,6 +12,38 @@ let playbackQueue: Map<number, AudioTask> = new Map();
 let currentPlayIndex = 0;
 let isPlaying = false;
 
+// Rate limiting: Track last request time
+let lastRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 800; // Minimum 800ms between requests (Fish Audio free tier limit)
+
+// Request queue for rate limiting
+let requestQueue: Array<() => Promise<void>> = [];
+let isProcessingRequests = false;
+
+const processRequestQueue = async () => {
+  if (isProcessingRequests || requestQueue.length === 0) return;
+  
+  isProcessingRequests = true;
+  
+  while (requestQueue.length > 0) {
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      // Wait before next request
+      await new Promise(resolve => setTimeout(resolve, MIN_REQUEST_INTERVAL - timeSinceLastRequest));
+    }
+    
+    const request = requestQueue.shift();
+    if (request) {
+      lastRequestTime = Date.now();
+      await request();
+    }
+  }
+  
+  isProcessingRequests = false;
+};
+
 // Reset queue for a new turn
 export const resetTTSQueue = () => {
   // Cleanup existing URLs
@@ -21,6 +53,8 @@ export const resetTTSQueue = () => {
   playbackQueue.clear();
   currentPlayIndex = 0;
   isPlaying = false;
+  // Also clear pending requests
+  requestQueue = [];
 };
 
 const processQueue = async () => {
@@ -64,23 +98,15 @@ const processQueue = async () => {
   }
 };
 
-export const queueCharacterSpeech = async (
+const makeTTSRequest = async (
   text: string, 
   apiKey: string, 
   referenceId: string,
-  index: number // New: Sequence Index
-) => {
-  // 1. Always register the task first to prevent sequence gaps
-  playbackQueue.set(index, { index, url: null, status: 'pending' });
-
-  // 2. Handle empty/invalid text gracefully
-  if (!text || !text.trim()) {
-    const task = playbackQueue.get(index);
-    if (task) task.status = 'played'; // Treat as skipped/played
-    processQueue();
-    return;
-  }
-
+  index: number,
+  retryCount = 0
+): Promise<void> => {
+  const MAX_RETRIES = 2;
+  
   try {
     const response = await fetch("/api/fish/v1/tts", {
       method: "POST",
@@ -98,6 +124,14 @@ export const queueCharacterSpeech = async (
 
     if (!response.ok) {
       const errorText = await response.text();
+      
+      // Handle rate limit with retry
+      if (response.status === 429 && retryCount < MAX_RETRIES) {
+        console.warn(`TTS Rate limited (Index ${index}), retrying in 2s...`);
+        await new Promise(resolve => setTimeout(resolve, 2000 * (retryCount + 1)));
+        return makeTTSRequest(text, apiKey, referenceId, index, retryCount + 1);
+      }
+      
       console.error(`TTS API Error (Index ${index}):`, response.status, errorText);
       const task = playbackQueue.get(index);
       if (task) task.status = 'failed';
@@ -122,4 +156,26 @@ export const queueCharacterSpeech = async (
     if (task) task.status = 'failed';
     processQueue();
   }
+};
+
+export const queueCharacterSpeech = async (
+  text: string, 
+  apiKey: string, 
+  referenceId: string,
+  index: number // New: Sequence Index
+) => {
+  // 1. Always register the task first to prevent sequence gaps
+  playbackQueue.set(index, { index, url: null, status: 'pending' });
+
+  // 2. Handle empty/invalid text gracefully
+  if (!text || !text.trim()) {
+    const task = playbackQueue.get(index);
+    if (task) task.status = 'played'; // Treat as skipped/played
+    processQueue();
+    return;
+  }
+
+  // 3. Add to rate-limited request queue
+  requestQueue.push(() => makeTTSRequest(text, apiKey, referenceId, index));
+  processRequestQueue();
 };

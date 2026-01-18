@@ -32,6 +32,16 @@ export const TTS_CONFIG = {
   // 尤尼 (Uni)
   uni: "b8ccd4edf76e4e6481462294618a9ce5", // Placeholder (Reuse Kiana for idol voice)
 
+  // === 敌方单位 ===
+  // 暗影骑士 (Shadow Knight)
+  shadow_knight: "d9dc9d29393344519f4e855f8f9e1137", // Placeholder (Deep male voice)
+
+  // 虚空潜行者 (Void Stalker)
+  void_stalker: "d9dc9d29393344519f4e855f8f9e1137", // Placeholder (Raspy/Whispery)
+
+  // 深渊君主 (Abyssal Monarch)
+  abyssal_monarch: "d9dc9d29393344519f4e855f8f9e1137", // Placeholder (Deepest boss voice)
+
   // 用户自定义角色默认语音 (如果用户没有指定)
   user_default: import.meta.env.VITE_TTS_USER_DEFAULT || "7f92f8afb8b54e03879433d71c9377a0", 
 };

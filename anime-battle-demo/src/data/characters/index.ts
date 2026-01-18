@@ -7,7 +7,9 @@ import { charHelga } from './helga';
 import { charZizhi } from './zizhi';
 import { charSimon } from './simon';
 import { charUni } from './uni';
-import { initialEnemy as shadowKnightEnemy } from './shadow_knight';
+import { enemyShadowKnight } from './shadow_knight';
+import { enemyVoidStalker } from './void_stalker';
+import { enemyAbyssalMonarch } from './abyssal_monarch';
 
 export const availableCharacters = [
   charLinque, 
@@ -21,5 +23,12 @@ export const availableCharacters = [
   charMei
 ];
 
+export const enemies = {
+  shadowKnight: enemyShadowKnight,
+  voidStalker: enemyVoidStalker,
+  abyssalMonarch: enemyAbyssalMonarch
+};
+
 export const initialPlayer = charLinque;
-export const initialEnemy = shadowKnightEnemy;
+// Default enemy
+export const initialEnemy = enemyShadowKnight;

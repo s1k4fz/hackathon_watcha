@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { BattleState, Character, Skill, AIActionResponse, BattleLog, ActiveBond, Faction } from '../types/game';
+import type { BattleState, Character, Skill, ActiveBond } from '../types/game';
 import { initialEnemy } from '../data/characters';
 import { analyzeCommandStream } from '../services/ai';
 import { queueCharacterSpeech, resetTTSQueue } from '../services/tts';
+import { stripEmotionTags } from '../services/emotionTags';
 
 const createLogId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-export const useBattle = (apiKey: string, initialParty: Character[]) => {
+export const useBattle = (apiKey: string, initialParty: Character[], initialEnemyData?: Character) => {
   
   // Helper to check bonds based on current party
   const checkBonds = (party: Character[]): ActiveBond[] => {
@@ -55,64 +56,84 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
   const initializeAV = (chars: Character[]) => {
     return chars.map(c => ({
       ...c,
-      currentActionValue: 10000 / c.stats.speed
+      currentActionValue: c.currentActionValue ?? (10000 / (c.stats.speed || 100))
     }));
   };
 
   const initialBonds = checkBonds(initialParty);
   
+  // Use provided enemy or default
+  const targetEnemy = initialEnemyData || initialEnemy;
+
   // Combine all combatants for speed calculation
-  const initialCombatants = [...initializeAV(initialParty), ...initializeAV([{ ...initialEnemy, id: 'enemy_1' }])];
+  const initialCombatants = [
+      ...initializeAV(initialParty), 
+      ...initializeAV([{ ...targetEnemy, stats: { ...targetEnemy.stats, speed: targetEnemy.stats.speed || 100 } }])
+  ];
   
-  // Find initial active character
+  // Robust AV Simulation Logic (Honkai: Star Rail Style)
   const getNextActiveState = (combatants: Character[]) => {
-    // Find min AV
-    const minAV = Math.min(...combatants.map(c => c.currentActionValue || 999));
-    
-    // Reduce everyone's AV
+    // 1. Normalize AVs so the fastest (lowest AV) becomes 0
+    const minAV = Math.min(...combatants.map(c => c.currentActionValue || 0));
     const updatedCombatants = combatants.map(c => ({
       ...c,
-      currentActionValue: (c.currentActionValue || 999) - minAV
+      currentActionValue: (c.currentActionValue || 0) - minAV
     }));
 
-    // Find who is at 0 (or less, but should be 0)
-    // If multiple are at 0, standard rule is player first or based on ID. 
-    // Here we just pick the first one found.
+    // 2. Identify active character(s) (AV <= 0)
+    // In rare case of tie, we pick the first one (usually player if array order is [party, enemy])
     const activeChar = updatedCombatants.find(c => (c.currentActionValue || 0) <= 0.01);
     
-    // Calculate Queue for UI (simulate next turns)
-    // This is a simplified simulation for visualization
+    // 3. Simulate Action Queue
     const actionQueue: Character[] = [];
-    let simCombatants = updatedCombatants.map(c => ({ ...c, simAV: c.currentActionValue || 0 }));
     
-    // If someone is active now, their NEXT turn is 10000/speed away.
-    if (activeChar) {
-        simCombatants = simCombatants.map(c => 
-            c.id === activeChar.id ? { ...c, simAV: 10000 / c.stats.speed } : c
-        );
-    }
-
-    // Simulate 5 steps
-    for (let i = 0; i < 5; i++) {
-        const nextMin = Math.min(...simCombatants.map(c => c.simAV));
-        const nextActorIndex = simCombatants.findIndex(c => Math.abs(c.simAV - nextMin) < 0.01);
-        if (nextActorIndex !== -1) {
-            const actor = simCombatants[nextActorIndex];
-            actionQueue.push(actor);
-            // Advance simulation
-            simCombatants = simCombatants.map(c => ({
-                ...c,
-                simAV: c.simAV - nextMin
-            }));
-            // Reset actor
-            simCombatants[nextActorIndex].simAV = 10000 / simCombatants[nextActorIndex].stats.speed;
+    // Create simulation clones with independent AV tracking
+    // If a character is ACTIVE (AV <= 0), their 'next' action is at 10000/Speed.
+    // Others are at their current AV.
+    // We want to simulate the 'Race' to 0.
+    // Actually, simpler model:
+    // We treat everyone's position on a timeline.
+    // Active char is at 0. They act, then move to +10000/Speed.
+    // Others are at their current AV (e.g. 50).
+    // We just pick whoever has the lowest total AV on this timeline.
+    
+    let simState = updatedCombatants.map(c => {
+        const speed = c.stats.speed || 100;
+        const baseInterval = 10000 / speed;
+        // If this is the active char, they 'just acted' in the simulation start, so they are at baseInterval.
+        // Wait, if we want to show the Active Char as #1 in queue, we shouldn't advance them yet.
+        // But the queue shows UPCOMING actions.
+        // Usually #1 is "Current Action".
+        // So:
+        if (c.id === activeChar?.id) {
+            return { ...c, simTotalAV: 0, baseInterval, isCurrent: true };
         }
+        return { ...c, simTotalAV: c.currentActionValue || 0, baseInterval, isCurrent: false };
+    });
+
+    // Generate 6 steps (Current + 5 Future)
+    for (let i = 0; i < 6; i++) {
+        // Sort by simTotalAV
+        simState.sort((a, b) => a.simTotalAV - b.simTotalAV);
+        
+        const winner = simState[0];
+        
+        // Push to queue
+        // For display: The AV shown is the relative AV from 'now'. 
+        // Since 'now' is 0 (relative to active char), simTotalAV is exactly what we want to display.
+        actionQueue.push({
+            ...winner,
+            currentActionValue: Math.floor(winner.simTotalAV)
+        });
+        
+        // Advance the winner for next loop
+        winner.simTotalAV += winner.baseInterval;
     }
 
     return { updatedCombatants, activeChar, actionQueue };
   };
 
-  const { updatedCombatants, activeChar, actionQueue } = getNextActiveState(initialCombatants);
+  const { updatedCombatants, actionQueue } = getNextActiveState(initialCombatants);
   const initialPlayerState = updatedCombatants.find(c => c.id === initialParty[0].id) || updatedCombatants[0]; // Fallback
 
   const [battleState, setBattleState] = useState<BattleState>({
@@ -146,35 +167,11 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
     }));
   };
 
-  const switchCharacter = (targetCharId: string) => {
-    // In Speed System, you can only "switch" view or maybe swap active char if mechanics allow?
-    // For now, let's assume this just switches the "View" or "Command Focus" if multiple chars are ready?
-    // Or maybe we disable manual switch and it strictly follows turn order?
-    // Requirement says: "In-battle character switching". 
-    // Let's keep it as "Tag Team" mechanic: Switch active character consumes the turn?
-    // OR: Player can switch who is "Frontline" but maybe Action Order dictates who acts?
-    // Let's adapt: If it's a PLAYER FACTION turn, allow switching to another ready member?
-    // No, standard HSR is: Character X's turn -> Character X acts.
-    // Let's implement: You can switch who the "Active Player" UI shows, but commands are issued BY the active character.
-    // Actually, "Switch Character" in the previous context meant "Tag another character in".
-    // Let's disable manual switching for now and strictly follow Speed Order.
-    // BUT, we need to handle "Player Input" phase correctly.
-    // When it is [Player Character A]'s turn, BattleState.player should be A.
-    // So manual switch is maybe not needed anymore?
-    // Let's repurpose it to "View Character Status"? Or just disable it.
-    // Waiting for user instruction on this. For now, keep as is but it might conflict.
-    // Actually, let's effectively "Swap" the active player state for UI.
-    
-    // NOTE: In strict turn-based speed system, you cannot arbitrarily switch who acts.
-    // So this function might be deprecated or changed to "Check Status".
-    // I will leave it but it might not affect "Who is acting".
-    
-    resetTTSQueue();
-    setBattleState(prev => {
-      const nextChar = prev.party.find(c => c.id === targetCharId);
-      if (!nextChar) return prev;
-      return { ...prev, player: nextChar };
-    });
+  const switchCharacter = () => {
+    // In strict Speed System, manual switching is disabled to prevent timeline conflicts.
+    // This function is now deprecated or could be used for "swapping position" skills in future.
+    console.warn("Manual switching is disabled in Speed Mode.");
+    return; 
   };
 
   const processSpeechChunk = (textChunk: string) => {
@@ -214,8 +211,12 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
           }
         }
 
-        queueCharacterSpeech(sentenceToSpeak, fishApiKey, fishRefId, speechSequence.current);
-        speechSequence.current++;
+        // Strip emotion tags before sending to TTS
+        const cleanedForTTS = stripEmotionTags(sentenceToSpeak);
+        if (cleanedForTTS.trim()) {
+          queueCharacterSpeech(cleanedForTTS, fishApiKey, fishRefId, speechSequence.current);
+          speechSequence.current++;
+        }
         speechBuffer.current = remaining;
       } else { break; }
     }
@@ -393,16 +394,47 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
       
       const updatedEnemy = { ...prev.enemy, currentHp: newEnemyHp, currentActionValue: newEnemyAV };
 
-      const newLogs = [
-        ...prev.logs,
-        { 
+      // --- Enemy Speech Logic ---
+      let speechLog = null;
+      let speechText = "";
+
+      // 1. Prioritize specific skill line (Always trigger if exists)
+      if (enemySkill.battleLine) {
+         speechText = enemySkill.battleLine;
+      }
+      // 2. Fallback to random generic skill line (60% chance)
+      else if (prev.enemy.battleLines?.skill && Math.random() < 0.6) {
+        const lines = prev.enemy.battleLines.skill;
+        speechText = lines[Math.floor(Math.random() * lines.length)];
+      }
+
+      if (speechText) {
+        speechLog = {
+            id: createLogId(),
+            turn: prev.turn,
+            message: speechText,
+            speaker: 'enemy' as const
+        };
+
+        // Queue TTS
+        const fishApiKey = import.meta.env.VITE_FISH_AUDIO_API_KEY;
+        const fishRefId = prev.enemy.ttsModelId;
+        if (fishApiKey && fishRefId) {
+            resetTTSQueue(); // Clear previous player speech if any
+            queueCharacterSpeech(stripEmotionTags(speechText), fishApiKey, fishRefId, 0);
+        }
+      }
+
+      const newLogs = [...prev.logs];
+      if (speechLog) newLogs.push(speechLog);
+
+      newLogs.push({ 
           id: createLogId(), 
           turn: prev.turn, 
           message: result.logMsg, 
           speaker: 'enemy' as const,
           isCrit: result.isCrit
-        }
-      ];
+      });
       
       // Check Defeat (All party dead)
       const allDead = updatedParty.every(c => c.currentHp <= 0);
@@ -419,17 +451,6 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
       }
 
       // Loop back to calc next turn
-      // Note: We need to trigger the useEffect calc. 
-      // We can set phase to a temporary 'turn_end' or just leverage the fact that we updated AV.
-      // But wait, we need to deduct AV in the NEXT calculation.
-      // The `processEnemyTurn` handles the ACTION.
-      // The `getNextActiveState` handles the WAITING.
-      // So here we just update state and let the effect pick up.
-      // We set phase to 'start' (reusing as 'calculating') or create a 'next_turn' phase?
-      // Let's reuse 'start' or add 'turn_resolve'. 
-      // Actually, setting it to 'start' is fine, or keep 'enemy_action' until end?
-      // Let's add explicit 'turn_end' phase to be safe.
-      
       return { 
           ...prev, 
           party: updatedParty,
@@ -477,7 +498,11 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
       const fishApiKey = import.meta.env.VITE_FISH_AUDIO_API_KEY;
       const fishRefId = battleState.player.ttsModelId;
       if (speechBuffer.current.trim() && fishApiKey && fishRefId) {
-         queueCharacterSpeech(speechBuffer.current, fishApiKey, fishRefId, speechSequence.current);
+         // Strip emotion tags before TTS
+         const cleanedForTTS = stripEmotionTags(speechBuffer.current);
+         if (cleanedForTTS.trim()) {
+           queueCharacterSpeech(cleanedForTTS, fishApiKey, fishRefId, speechSequence.current);
+         }
       }
       speechBuffer.current = ""; 
 
@@ -555,7 +580,8 @@ export const useBattle = (apiKey: string, initialParty: Character[]) => {
       const newPlayerHp = Math.min(prev.player.maxHp, prev.player.currentHp + result.heal);
 
       // Reset Player AV
-      const newPlayerAV = 10000 / prev.player.stats.speed;
+      const speed = prev.player.stats.speed || 100;
+      const newPlayerAV = 10000 / speed;
 
       const updatedParty = prev.party.map(char => 
         char.id === prev.player.id ? { ...prev.player, currentHp: newPlayerHp, currentActionValue: newPlayerAV } : char

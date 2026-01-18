@@ -1,64 +1,54 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 import type { Character } from '../types/game';
 import { HealthBar } from './HealthBar';
-import clsx from 'clsx';
+import { getCharacterPortrait } from '../utils/assetLoader';
 
 interface CharacterDisplayProps {
   character: Character;
   isPlayer: boolean;
-  isActive: boolean; // Is it this character's turn to act?
+  isActive: boolean;
 }
 
 export const CharacterDisplay: React.FC<CharacterDisplayProps> = ({ character, isPlayer, isActive }) => {
-  return (
-    <div className={clsx(
-      "flex flex-col gap-4 relative z-10", 
-      isPlayer ? "items-start" : "items-end"
-    )}>
-      {/* Name and HP */}
-      <div className="w-64">
-         <HealthBar 
-           current={character.currentHp} 
-           max={character.maxHp} 
-           label={character.name}
-           isPlayer={isPlayer}
-         />
-      </div>
+  const portraitUrl = getCharacterPortrait(character.id);
 
-      {/* Character Sprite Placeholder */}
-      <motion.div 
-        className={clsx(
-          "w-48 h-64 rounded-xl border-4 shadow-2xl relative overflow-hidden transition-all duration-300",
-          isPlayer ? "bg-indigo-900/50 border-indigo-400" : "bg-red-900/50 border-red-400",
-          isActive && "ring-4 ring-yellow-400 scale-105"
+    return (
+      <div className={`relative ${isPlayer ? 'items-end' : 'items-start'}`}>
+       {/* Name Tag & Health - Fixed at Top Center */}
+       {isActive && (
+         <div className="fixed top-8 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center w-full max-w-4xl pointer-events-none">
+           <h3 className="text-4xl font-black text-gray-900 tracking-tighter uppercase italic drop-shadow-2xl mb-2">
+             {character.name}
+           </h3>
+           <div className="w-[400px] shadow-2xl">
+             <HealthBar 
+               current={character.currentHp} 
+               max={character.maxHp} 
+               label=""
+               isPlayer={isPlayer}
+             />
+           </div>
+         </div>
+       )}
+
+        {/* Portrait - No Border, Huge */}
+      <div className={`
+        relative transition-all duration-500
+        ${isActive ? 'scale-110 brightness-110' : 'scale-100 grayscale opacity-60'}
+      `}>
+        {portraitUrl ? (
+          <img 
+            src={portraitUrl} 
+            alt={character.name} 
+            className="h-[85vh] w-auto object-contain drop-shadow-2xl"
+          />
+        ) : (
+          /* Fallback Character Sprite/Placeholder */
+          <div className="h-[80vh] w-96 flex items-center justify-center bg-gray-100 rounded-3xl">
+            <div className="text-9xl text-gray-300 font-bold select-none">{character.name[0]}</div>
+          </div>
         )}
-        animate={{ 
-          y: isActive ? [0, -10, 0] : 0,
-        }}
-        transition={{ 
-          y: { repeat: Infinity, duration: 2, ease: "easeInOut" } 
-        }}
-      >
-        {/* Avatar Image Placeholder */}
-        <div className="absolute inset-0 flex items-center justify-center text-6xl opacity-50 select-none">
-          {isPlayer ? "🦸‍♀️" : "🦹‍♂️"}
-        </div>
-        
-        {/* Status Effect Indicators could go here */}
-        
-      </motion.div>
-      
-      {/* Action Indicator */}
-      {isActive && (
-        <motion.div 
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="px-3 py-1 bg-yellow-500 text-black font-bold text-xs rounded-full uppercase tracking-widest absolute -bottom-3 left-1/2 -translate-x-1/2 shadow-lg"
-        >
-          Active
-        </motion.div>
-      )}
+      </div>
     </div>
   );
 };

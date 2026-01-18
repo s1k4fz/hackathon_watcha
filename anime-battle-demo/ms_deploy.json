@@ -1,0 +1,32 @@
+{
+  "$schema": "https://modelscope.cn/api/v1/studios/deploy_schema.json",
+  "sdk_type": "docker",
+  "resource_configuration": "platform/2v-cpu-16g-mem",
+  "port": 7860,
+  "environment_variables": [
+    {
+      "name": "VITE_OPENROUTER_API_KEY",
+      "value": "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"
+    },
+    {
+      "name": "VITE_AI_MODEL",
+      "value": "google/gemini-3-flash-preview"
+    },
+    {
+      "name": "VITE_AI_TEMPERATURE",
+      "value": "0.7"
+    },
+    {
+      "name": "VITE_FISH_AUDIO_API_KEY",
+      "value": "d98ed8378fe74eac9c996f59fb117f9d"
+    },
+    {
+      "name": "VITE_TTS_MIN_CHARS",
+      "value": "6"
+    },
+    {
+      "name": "VITE_TTS_KIANA",
+      "value": "a1ae30991487475ababd708ea7a000df"
+    }
+  ]
+}

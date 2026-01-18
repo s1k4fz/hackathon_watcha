@@ -5,6 +5,7 @@ export type EffectType =
   | 'heal'         // 治疗生命 (基于最大生命)
   | 'defense'      // 防御姿态 (获得减伤buff)
   | 'buff_atk'     // 提升攻击 (下回合生效)
+  | 'buff_def'     // 提升防御 (修正漏掉的类型)
   | 'self_damage'; // 自我伤害
 
 export interface SkillEffect {
@@ -18,8 +19,9 @@ export interface Skill {
   name: string;
   description: string;
   effects: SkillEffect[]; // 新的核心逻辑：效果词条数组
-  risk: RiskLevel;        // 保留作为 AI 决策参考
+  risk?: RiskLevel;        // 保留作为 AI 决策参考
   cooldown?: number;
+  battleLine?: string;     // 技能释放时的固定台词
 }
 
 export interface CharacterStats {
@@ -54,6 +56,14 @@ export interface Character {
   ttsModelId?: string;
   faction?: Faction;
   
+  // Battle Lines for Enemy (Simple automated speech)
+  battleLines?: {
+    start?: string[];
+    skill?: string[];
+    hit?: string[];
+    defeat?: string[];
+  };
+
   // Runtime State for Speed System
   currentActionValue?: number; // 当前行动值 (AV)
 }

@@ -1,28 +1,30 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Check, Play } from 'lucide-react';
 import type { Character } from '../types/game';
-import { availableCharacters as defaultChars } from '../data/characters';
+import { availableCharacters as defaultChars, initialEnemy } from '../data/characters';
 import { UserCreationModal } from './UserCreationModal';
+import { getCharacterPortrait, getCharacterCard } from '../utils/assetLoader';
 
 interface CharacterSelectionProps {
   apiKey: string;
   onStart: (selectedParty: Character[]) => void;
   customCharacters: Character[];
   onCharacterCreated: (character: Character) => void;
+  enemy?: Character;
 }
 
 export const CharacterSelection: React.FC<CharacterSelectionProps> = ({ 
   apiKey, 
   onStart, 
   customCharacters,
-  onCharacterCreated 
+  onCharacterCreated,
+  enemy
 }) => {
   const [showCreationModal, setShowCreationModal] = useState(false);
   const [selectedCharIds, setSelectedCharIds] = useState<string[]>([]);
   
   // Combine default and custom characters
   const allCharacters = [...defaultChars, ...customCharacters];
+  const targetEnemy = enemy || initialEnemy;
 
   const handleToggleChar = (char: Character) => {
     setSelectedCharIds(prev => {
@@ -42,163 +44,173 @@ export const CharacterSelection: React.FC<CharacterSelectionProps> = ({
     }
   };
 
-  return (
-    <div className="w-full h-screen bg-gray-950 text-white flex flex-col items-center justify-start p-8 relative overflow-y-auto">
-      
-      {/* Background Decor */}
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none fixed" />
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-purple-500/20 blur-[120px] rounded-full pointer-events-none fixed" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-pink-500/20 blur-[120px] rounded-full pointer-events-none fixed" />
+  const enemyPortrait = getCharacterPortrait(targetEnemy.id);
 
-      <div className="flex flex-col items-center mb-10 mt-8 z-10">
-        <motion.h1 
-          initial={{ opacity: 0, y: -50 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-5xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-purple-400 text-center"
-        >
-          ASSEMBLE YOUR TEAM
-        </motion.h1>
-        <motion.p 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="text-gray-400 mt-2 font-mono text-sm"
-        >
-          SELECT UP TO 4 MEMBERS ({selectedCharIds.length}/4)
-        </motion.p>
+  return (
+    <div className="w-full h-screen bg-gray-50 flex overflow-hidden font-sans">
+      {/* Left Panel: Character Selection */}
+      <div className="flex-1 flex flex-col p-8 gap-6 overflow-y-auto border-r border-gray-200">
+        
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-black text-gray-900 tracking-tighter uppercase">Squad Selection</h1>
+            <p className="text-gray-400 text-sm mt-1 tracking-wide">
+              SELECT UP TO 4 AGENTS // CURRENT: <span className="text-gray-900 font-bold">{selectedCharIds.length}</span>/4
+            </p>
+          </div>
+          
+          <button
+             onClick={() => setShowCreationModal(true)}
+             className="px-4 py-2 bg-white border border-gray-200 text-xs font-bold tracking-wider hover:bg-gray-50 transition-colors uppercase"
+          >
+            + Create Agent
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+          {allCharacters.map(char => {
+            const isSelected = selectedCharIds.includes(char.id);
+            // 联动角色(kiana, elysia, mei)和用户创建角色都算作 Custom
+            const isUserCreated = char.id.startsWith('user_') || ['kiana', 'elysia', 'mei'].includes(char.id);
+            
+            // 使用专用卡片立绘，如果没有则回退到全身立绘
+            const cardImage = getCharacterCard(char.id);
+            
+            return (
+              <button
+                key={char.id}
+                onClick={() => handleToggleChar(char)}
+                className={`
+                  group relative flex flex-col text-left transition-all duration-300 border overflow-hidden
+                  aspect-[3/5]
+                  ${isSelected 
+                    ? `bg-gray-900 text-white shadow-xl scale-105 z-10 ${isUserCreated ? 'border-gray-900 ring-2 ring-white/50' : 'border-gray-900'}`
+                    : `bg-white hover:shadow-md ${isUserCreated ? 'border-2 border-gray-800 text-gray-900' : 'border border-gray-200 hover:border-gray-400 text-gray-500 hover:text-gray-700'}`
+                  }
+                `}
+              >
+                {/* User Tag */}
+                {isUserCreated && (
+                  <div className={`
+                    absolute top-2 left-2 z-20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest rounded-full shadow-sm
+                    ${isSelected ? 'bg-white text-black' : 'bg-gray-900 text-white'}
+                  `}>
+                    CUSTOM
+                  </div>
+                )}
+
+                {/* Card Image Area */}
+                <div className={`flex-1 w-full relative overflow-hidden ${isSelected ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    {cardImage ? (
+                      <img 
+                        src={cardImage} 
+                        alt={char.name} 
+                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center opacity-20 text-6xl font-black select-none">
+                          {char.name[0]}
+                      </div>
+                    )}
+                </div>
+
+                {/* Info Area */}
+                <div className="p-3 flex flex-col gap-1 border-t border-white/10 z-10 bg-inherit">
+                   <div className={`text-[10px] font-bold uppercase tracking-widest ${isSelected ? 'text-gray-400' : 'text-gray-400'}`}>
+                      {char.faction || 'UNKNOWN'}
+                   </div>
+                   <div className={`text-lg font-bold leading-none truncate ${isSelected ? 'text-white' : 'text-gray-800'}`}>
+                      {char.name}
+                   </div>
+                   
+                   <div className={`flex justify-between items-center mt-2 pt-2 border-t border-dashed ${isSelected ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <div className={`text-[10px] font-mono ${isSelected ? 'text-gray-500' : 'text-gray-400'}`}>SPD {char.stats.speed}</div>
+                      <div className={`text-[10px] font-mono ${isSelected ? 'text-gray-500' : 'text-gray-400'}`}>ATK {char.stats.attack}</div>
+                   </div>
+                </div>
+
+                {/* Selection Indicator */}
+                {isSelected && (
+                  <div className="absolute top-2 right-2 w-3 h-3 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.6)] z-20"></div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-auto pt-8">
+           <button
+            onClick={handleStartGame}
+            disabled={selectedCharIds.length === 0}
+            className="
+              w-full py-4 bg-gray-900 text-white font-black text-xl tracking-widest uppercase
+              disabled:opacity-20 disabled:cursor-not-allowed hover:bg-gray-800 transition-all
+            "
+          >
+            Deploy Squad
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap justify-center gap-8 z-10 max-w-7xl pb-32">
-        {allCharacters.map((char, index) => {
-          const isSelected = selectedCharIds.includes(char.id);
-          return (
-            <motion.div
-              key={char.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.1 }}
-              whileHover={{ scale: 1.05 }}
-              onClick={() => handleToggleChar(char)}
-              className={`group cursor-pointer relative w-72 bg-gray-900/50 backdrop-blur-md rounded-2xl border overflow-hidden shadow-2xl transition-all duration-300 flex flex-col ${
-                isSelected 
-                  ? 'border-pink-500 ring-2 ring-pink-500/50 scale-105' 
-                  : 'border-white/10 hover:border-pink-500/50'
-              }`}
-            >
-              {isSelected && (
-                <div className="absolute top-3 right-3 z-20 bg-pink-500 text-white rounded-full p-1 shadow-lg">
-                  <Check size={16} strokeWidth={3} />
-                </div>
-              )}
+      {/* Right Panel: Enemy Preview */}
+      <div className="w-[40%] bg-gray-100 p-8 flex flex-col justify-center items-center relative overflow-hidden">
+         {/* Background Decoration */}
+         <div className="absolute top-0 right-0 text-[200px] font-black text-gray-200 leading-none select-none opacity-50">
+            VS
+         </div>
 
-              {/* Card Header (Image Placeholder) */}
-              <div className={`h-40 w-full ${char.id.includes('user') ? 'bg-indigo-900/40' : char.id === 'elysia' ? 'bg-pink-900/40' : 'bg-purple-900/40'} flex items-center justify-center relative overflow-hidden group-hover:bg-opacity-60 transition-all`}>
-                <div className="text-7xl select-none filter blur-sm opacity-50 transform group-hover:scale-110 transition-transform duration-500">
-                  {(() => {
-                    if (char.id.includes('user')) return '👤';
-                    if (char.id === 'elysia') return '🌸';
-                    if (char.id === 'kiana') return '🔥';
-                    if (char.id === 'mei') return '⚡️';
-                    if (char.id === 'linque') return '🐦';
-                    if (char.id === 'luoshu') return '📘';
-                    if (char.id === 'helga') return '⚔️';
-                    if (char.id === 'zizhi') return '🐭';
-                    if (char.id === 'simon') return '👁️';
-                    if (char.id === 'uni') return '🎤';
-                    return '✨';
-                  })()}
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent" />
-              </div>
+         <div className="z-10 w-full max-w-md">
+            <div className="text-center mb-8">
+               <h2 className="text-xs font-bold text-red-500 tracking-[0.2em] mb-2 uppercase">Target Identified</h2>
+               <div className="text-5xl font-black text-gray-900 mb-4">{targetEnemy.name}</div>
+               <div className="inline-block px-3 py-1 bg-red-100 text-red-600 text-xs font-mono font-bold uppercase tracking-wide">
+                  Level {targetEnemy.stats.level} Threat
+               </div>
+            </div>
 
-              {/* Content */}
-              <div className="p-5 relative flex-1 flex flex-col">
-                <h2 className="text-xl font-bold mb-1 text-white group-hover:text-pink-300 transition-colors truncate">
-                  {char.name}
-                </h2>
-                <div className="text-xs font-mono text-gray-400 mb-3 uppercase tracking-widest truncate flex items-center justify-between">
-                  <span>{char.id}</span>
-                  {char.faction && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 border border-gray-700">
-                      {char.faction === 'dawn_legacy' ? '晓光' : 
-                       char.faction === 'crimson_heavy' ? '绯红' :
-                       char.faction === 'wasteland_drifters' ? '荒原' :
-                       char.faction === 'deep_dive' ? '深潜' : '其他'}
+            {/* Enemy Card / Visual */}
+            <div className="aspect-[3/4] bg-white border border-gray-200 shadow-xl relative group overflow-hidden">
+               {/* Placeholder for Enemy Art */}
+               <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+                  {enemyPortrait ? (
+                      <img src={enemyPortrait} alt={targetEnemy.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-9xl font-black text-gray-200 select-none">
+                      {targetEnemy.name[0]}
                     </span>
                   )}
-                </div>
-                
-                <p className="text-xs text-gray-300 leading-relaxed line-clamp-3 mb-4 h-12">
-                  {char.personality.split('\n')[0] || char.personality}
-                </p>
-
-                <div className="flex gap-2 mb-4 mt-auto">
-                  {char.skills.slice(0, 3).map(skill => (
-                    <span key={skill.id} className="text-[10px] px-2 py-1 bg-white/5 rounded border border-white/10 text-gray-400">
-                      {skill.effects[0]?.type === 'damage' ? '⚔️' : skill.effects[0]?.type === 'defense' ? '🛡️' : '❤️'}
-                    </span>
-                  ))}
-                  <span className="text-[10px] px-2 py-1 bg-white/5 rounded border border-white/10 text-gray-400">
-                    +{Math.max(0, char.skills.length - 3)}
-                  </span>
-                </div>
-
-                <div className={`w-full py-2 mt-2 rounded-lg text-xs font-bold uppercase tracking-wider text-center transition-all ${
-                  isSelected ? 'bg-pink-500 text-white' : 'bg-white/5 text-gray-400'
-                }`}>
-                  {isSelected ? 'SELECTED' : 'SELECT'}
-                </div>
-              </div>
-            </motion.div>
-          );
-        })}
-
-        {/* Add New Character Button */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: allCharacters.length * 0.1 }}
-          whileHover={{ scale: 1.05 }}
-          onClick={() => setShowCreationModal(true)}
-          className="group cursor-pointer relative w-72 h-[340px] bg-gray-900/30 backdrop-blur-sm rounded-2xl border border-dashed border-white/20 flex flex-col items-center justify-center gap-4 hover:bg-indigo-900/20 hover:border-indigo-500/50 transition-all duration-300"
-        >
-          <div className="p-4 rounded-full bg-white/5 group-hover:bg-indigo-500/20 transition-colors">
-            <Plus className="w-12 h-12 text-gray-500 group-hover:text-indigo-400" />
-          </div>
-          <span className="text-gray-500 font-bold tracking-widest group-hover:text-indigo-300">CREATE NEW</span>
-        </motion.div>
+               </div>
+               
+               {/* Stats Overlay */}
+               <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-white via-white/90 to-transparent">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                     <div>
+                        <div className="text-gray-400 text-[10px] uppercase tracking-wider">HP</div>
+                        <div className="font-mono font-bold text-gray-800">{targetEnemy.maxHp}</div>
+                     </div>
+                     <div>
+                        <div className="text-gray-400 text-[10px] uppercase tracking-wider">ATK</div>
+                        <div className="font-mono font-bold text-gray-800">{targetEnemy.stats.attack}</div>
+                     </div>
+                     <div className="col-span-2">
+                        <div className="text-gray-400 text-[10px] uppercase tracking-wider">Description</div>
+                        <div className="text-gray-600 text-xs mt-1 leading-relaxed">
+                           {targetEnemy.personality}
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         </div>
       </div>
 
-      {/* Floating Start Button */}
-      <AnimatePresence>
-        {selectedCharIds.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 100 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 100 }}
-            className="fixed bottom-10 z-50"
-          >
-            <button
-              onClick={handleStartGame}
-              className="px-12 py-4 bg-gradient-to-r from-pink-500 to-purple-600 rounded-full font-black text-xl shadow-lg hover:shadow-purple-500/40 hover:scale-105 active:scale-95 transition-all flex items-center gap-3 border border-white/20"
-            >
-              <span>DEPLOY SQUAD</span>
-              <span className="bg-white/20 px-2 py-0.5 rounded text-sm">{selectedCharIds.length}/4</span>
-              <Play fill="currentColor" size={20} />
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {showCreationModal && (
-          <UserCreationModal 
-            apiKey={apiKey}
-            onCharacterCreated={onCharacterCreated}
-            onClose={() => setShowCreationModal(false)}
-          />
-        )}
-      </AnimatePresence>
+      {showCreationModal && (
+        <UserCreationModal 
+          apiKey={apiKey}
+          onCharacterCreated={onCharacterCreated}
+          onClose={() => setShowCreationModal(false)}
+        />
+      )}
     </div>
   );
 };
